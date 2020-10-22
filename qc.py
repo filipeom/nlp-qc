@@ -1,50 +1,55 @@
-import argparse, re
+import argparse, re, nltk
 
-
-def pre_process(q : str):
-    # FIXME: 
-    #   1. `` ... '' -> " ... " ?
-    #   2. ` ... ' -> ' ... ' ?
+def pre_process(q : str, skip=False):
 
     def normalize(q : str):
-        return re.sub(r"[^a-zA-Z0-9\s'?!,.]", r"", q)
-
-    def remove_extra_spaces(q : str):
-        return re.sub(r"\s\s+", r" ", q)
-
-    def remove_space_before_apost(q : str):
-        return re.sub(r"\s'", r"'", q)
+        return re.sub(r"[^a-zA-Z0-9\s]", r"", q.lower())
 
     def remove_endline_char(q : str):
-        return re.sub(r"\n", r"", q)
+        return q.rstrip()
 
-    return remove_endline_char(
-            remove_space_before_apost(
-                remove_extra_spaces(
-                    normalize(q))))
+    proc = remove_endline_char(normalize(q))
 
-def execute(tdata : dict, questions : list):
-    for q in tdata['q']:
-        print(q)
+    return proc if not skip else q
+
+#def distance(s1 : list, s2 : list):
+#    set1, set2 = set(s1), set(s2)
+#    return 1 - (2 * len(set1.intersection(set2))) / (len(set1) + len(set2))
+
+def distance(s1 : list, s2 : list):
+    return nltk.jaccard_distance(set(s1), set(s2))
+
+def execute(tdata : dict, questions : list, is_fine=False):
+    # classifications list
+    lbls = list()
 
     for q in questions:
-        print(q)
+        # calculate distances from training data
+        dists = \
+            list(map(lambda d : \
+                distance(d['q'].split(), q.split()),
+                tdata))
+        # get the min distance classification
+        d = tdata[dists.index(min(dists))]
+        lbls.append( \
+            "{}:{}".format(d['c'], d['f']) if is_fine else
+            d['c'])
 
-def main(train_file : str, questions_file: str):
-    tdata = dict(
-        c = list(),
-        f = list(),
-        q = list())
+    return lbls 
+
+def main(train_file : str, questions_file: str, ty : bool):
+    tdata = list()
     questions = list() 
 
     # parse training data into dictionary "tdata"
     with open(train_file, "r") as file:
         for line in file:
-            cls, q = line.split(maxsplit=1)
-            c_cls, f_cls = cls.split(':')
-            tdata['c'].append(c_cls)
-            tdata['f'].append(f_cls)
-            tdata['q'].append(pre_process(q))
+            lbl, qst = line.split(maxsplit=1)
+            coa, fin = lbl.split(':')
+            tdata.append(dict(
+                c = coa,
+                f = fin,
+                q = pre_process(qst)))
         file.close()
 
     # parse questions into list "questions"
@@ -55,13 +60,20 @@ def main(train_file : str, questions_file: str):
         file.close()
 
     # execute qc
-    execute(tdata, questions)
+    lbls = execute(tdata, questions, ty)
+
+    # print classifications
+    list(map(lambda c : print(c), lbls))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("-coarse", dest="ty", 
+        action="store_false")
+    parser.add_argument("-fine", dest="ty",
+        action="store_true")
     parser.add_argument("train_file", type=str,
         help="path of the training file")
     parser.add_argument("questions_file", type=str,
-            help="path of the questions")
+        help="path of the questions")
     args = parser.parse_args()
-    main(args.train_file, args.questions_file)
+    main(args.train_file, args.questions_file, args.ty)
